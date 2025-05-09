@@ -1,61 +1,66 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Laravel FURS Sync Aplikacija
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+## Zahteve
 
-## About Laravel
+Projekt uporablja **PHP 8.3** in zahteva, da ima PHP omogočeno **PDO SQLite** razširitev, saj je ta potrebna za delovanje Laravel frameworka. V `php.ini` mora biti omogočena vrstica:
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+```ini
+extension=pdo_sqlite
+```
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+Po želji lahko uporabite tudi drugo vrsto baze (npr. MySQL ali PostgreSQL). To lahko prilagodite v `.env` datoteki.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Opis aplikacije
 
-## Learning Laravel
+Aplikacija omogoča sinhronizacijo podatkov iz FURS-ovega strežnika, njihovo obdelavo in prikaz v spletni aplikaciji.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+### Scheduler in ukaz za sinhronizacijo
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+Scheduler je nastavljen v `app/Console/Kernel.php` tako, da se sinhronizacija avtomatsko sproži vsak dan ob polnoči (cron-like funkcionalnost). Ker Laravel scheduler lokalno brez dodatne nastavitve ne deluje, lahko sinhronizacijo poženete ročno z ukazom:
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+```sh
+php artisan app:sync-furs
+```
 
-## Laravel Sponsors
+Ukaz se nahaja v `app/Console/Commands/SyncFurs.php` in kliče `sync` metodo v `FursController` (`app/Http/Controllers/FursController.php`).
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+### FursController
 
-### Premium Partners
+V `FursController` se nahajata dve glavni metodi:
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development/)**
-- **[Active Logic](https://activelogic.com)**
+- `index()`: prebere lokalno `.txt` datoteko in vrne pogled s podatki ali z napako, če datoteke ni.
+- `sync()`: sproži prenos ZIP datoteke s FURS strežnika, jo razširi in shrani podatke. Večina logike je prenesena v servisno plast (`Services/HandleFursDataService.php`), v skladu z načelom minimalne logike v kontrolerjih.
 
-## Contributing
+### HandleFursDataService
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+V tem servisu se izvaja:
 
-## Code of Conduct
+- prenos ZIP datoteke iz FURS strežnika,
+- razširjanje arhiva,
+- zapis podatkov v lokalno `.txt` datoteko.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Zapis podatkov poteka preko **queue-ov**, kar omogoča obdelavo v manjših sklopih (trenutno po 100 vrstic), s čimer se zmanjša poraba sistemskih virov. Za to je zadolžen `Jobs/WriteFursDataToFile.php`.
 
-## Security Vulnerabilities
+### Prikaz podatkov
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Podatki se prikazujejo v tabeli prek Blade predloge, ki se nahaja v `resources/views/furs/index.blade.php`. Videz izpisa ni bil prioriteten, saj po navodilih ni bil del ocenjevanja.
 
-## License
+## Pomanjkljivosti in možnosti izboljšav
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+- Laravel je zasnovan okoli uporabe modelov in baz podatkov. Trenutno se podatki zapisujejo v `.txt` datoteko, kar ni optimalno.
+- Če bi uporabili bazo, bi lahko implementirali paginacijo, boljšo obdelavo in iskanje po podatkih.
+- Čeprav navodila ne dovolijo uporabo baze, jo Laravel vseeno potrebuje za osnovno delovanje, zato sem jo rabil vključiti v nalogo. Upam da bo vseeno v redu.
+- Možna nadaljnja optimizacija bi bila ločitev prenosa ZIP datoteke in zapisa podatkov — npr. prenos ob 23:30, zapis ob 00:00.
+
+## Namestitev projekta
+
+1. V korensko mapo projekta kopirajte `.env` datoteko, ki sem vam jo poslal po e-pošti.
+2. Poženite naslednje ukaze:
+
+```sh
+composer install
+php artisan migrate
+php artisan serve
+php artisan queue:listen
+php artisan app:sync-furs
+```
